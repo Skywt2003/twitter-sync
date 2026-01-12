@@ -1,0 +1,19 @@
+{
+  "name": "twitter-sync",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sync": "node --import tsx src/index.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "dotenv": "^16.4.5",
+    "undici": "^6.19.8",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.2",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.5"
+  }
+}
