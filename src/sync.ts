@@ -89,7 +89,11 @@ export async function syncTweets(
     records.push(...quotedRecords);
   }
 
-  const { error } = await supabase.from(TABLE_NAME).upsert(records, {
+  const uniqueRecords = Array.from(
+    new Map(records.map((record) => [record.tweet_id, record])).values()
+  );
+
+  const { error } = await supabase.from(TABLE_NAME).upsert(uniqueRecords, {
     onConflict: "tweet_id"
   });
 
