@@ -2,6 +2,38 @@ import type { AppConfig } from "./config.js";
 
 const X_API_BASE = "https://api.twitter.com/2";
 
+async function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchWithRetry(url: URL, options: RequestInit, maxRetries = 3): Promise<Response> {
+  let lastError: Error | undefined;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetch(url, options);
+
+      if (response.status === 429) {
+        const retryAfter = response.headers.get("Retry-After");
+        const waitTime = retryAfter ? Number.parseInt(retryAfter, 10) * 1000 : Math.pow(2, attempt) * 1000;
+        console.log(`Rate limited (attempt ${attempt}/${maxRetries}), waiting ${waitTime}ms...`);
+        await sleep(waitTime);
+        continue;
+      }
+
+      return response;
+    } catch (error) {
+      lastError = error as Error;
+      console.log(`Fetch error (attempt ${attempt}/${maxRetries}):`, error);
+      if (attempt < maxRetries) {
+        await sleep(Math.pow(2, attempt) * 1000);
+      }
+    }
+  }
+
+  throw lastError || new Error("Max retries exceeded");
+}
+
 export type Media = {
   media_key: string;
   type: string;
@@ -52,7 +84,7 @@ export type UserLookupResponse = {
 export async function fetchUserId(config: AppConfig): Promise<UserLookupResponse> {
   const url = new URL(`${X_API_BASE}/users/by/username/${config.username}`);
 
-  const response = await fetch(url, {
+  const response = await fetchWithRetry(url, {
     headers: {
       Authorization: `Bearer ${config.bearerToken}`
     }
@@ -87,7 +119,7 @@ export async function fetchUserTweets(
   url.searchParams.set("media.fields", "url,preview_image_url,type");
   url.searchParams.set("user.fields", "username,name");
 
-  const response = await fetch(url, {
+  const response = await fetchWithRetry(url, {
     headers: {
       Authorization: `Bearer ${config.bearerToken}`
     }
@@ -100,3 +132,4 @@ export async function fetchUserTweets(
 
   return response.json() as Promise<TweetResponse>;
 }
+
