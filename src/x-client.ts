@@ -9,20 +9,35 @@ export type Media = {
   preview_image_url?: string;
 };
 
+export type ReferencedTweet = {
+  type: "quoted" | "retweeted" | "replied_to";
+  id: string;
+};
+
+export type User = {
+  id: string;
+  username: string;
+  name: string;
+};
+
 export type Tweet = {
   id: string;
   text: string;
   created_at: string;
   conversation_id?: string;
+  author_id?: string;
   attachments?: {
     media_keys?: string[];
   };
+  referenced_tweets?: ReferencedTweet[];
 };
 
 export type TweetResponse = {
   data?: Tweet[];
   includes?: {
     media?: Media[];
+    tweets?: Tweet[];
+    users?: User[];
   };
 };
 
@@ -53,17 +68,24 @@ export async function fetchUserId(config: AppConfig): Promise<UserLookupResponse
 
 export async function fetchUserTweets(
   config: AppConfig,
-  userId: string
+  userId: string,
+  sinceId?: string
 ): Promise<TweetResponse> {
   const url = new URL(`${X_API_BASE}/users/${userId}/tweets`);
-  const startTime = new Date(Date.now() - config.syncDays * 24 * 60 * 60 * 1000).toISOString();
 
-  url.searchParams.set("start_time", startTime);
+  if (sinceId) {
+    url.searchParams.set("since_id", sinceId);
+  } else {
+    const startTime = new Date(Date.now() - config.syncIntervalDays * 24 * 60 * 60 * 1000).toISOString();
+    url.searchParams.set("start_time", startTime);
+  }
+
   url.searchParams.set("max_results", "100");
   url.searchParams.set("exclude", "replies,retweets");
-  url.searchParams.set("tweet.fields", "created_at,conversation_id,attachments");
-  url.searchParams.set("expansions", "attachments.media_keys");
+  url.searchParams.set("tweet.fields", "created_at,conversation_id,attachments,referenced_tweets,author_id");
+  url.searchParams.set("expansions", "attachments.media_keys,referenced_tweets.id,author_id");
   url.searchParams.set("media.fields", "url,preview_image_url,type");
+  url.searchParams.set("user.fields", "username,name");
 
   const response = await fetch(url, {
     headers: {

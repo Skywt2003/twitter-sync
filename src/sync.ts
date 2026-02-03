@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AppConfig } from "./config.js";
-import type { Media, Tweet } from "./x-client.js";
+import type { Media, Tweet, User } from "./x-client.js";
 
 const TABLE_NAME = "tweets";
 
@@ -14,6 +14,7 @@ type StoredTweet = {
   permalink: string;
   media_urls: string[];
   media_types: string[];
+  is_quote: boolean;
   raw: unknown;
 };
 
@@ -22,7 +23,9 @@ export async function syncTweets(
   supabase: SupabaseClient,
   userId: string,
   tweets: Tweet[],
-  media: Media[]
+  media: Media[],
+  quotedTweets: Tweet[],
+  users: User[]
 ) {
   if (tweets.length === 0) {
     console.log("No tweets found in the sync window.");
@@ -30,6 +33,7 @@ export async function syncTweets(
   }
 
   const mediaByKey = new Map(media.map((item) => [item.media_key, item]));
+  const usersById = new Map(users.map((item) => [item.id, item]));
   const threadRoots = computeThreadRoots(tweets);
 
   const records: StoredTweet[] = tweets.map((tweet) => {
@@ -56,9 +60,34 @@ export async function syncTweets(
       permalink: `https://x.com/${config.username}/status/${tweet.id}`,
       media_urls: mediaUrls,
       media_types: mediaTypes,
+      is_quote: false,
       raw: { ...tweet, media: mediaItems }
     };
   });
+
+  if (quotedTweets.length > 0) {
+    const quotedRecords: StoredTweet[] = quotedTweets.map((tweet) => {
+      const author = usersById.get(tweet.author_id ?? "");
+
+      return {
+        tweet_id: tweet.id,
+        author_id: tweet.author_id ?? "",
+        created_at: tweet.created_at,
+        text: tweet.text,
+        conversation_id: tweet.conversation_id ?? null,
+        thread_root_id: tweet.id,
+        permalink: author
+          ? `https://x.com/${author.username}/status/${tweet.id}`
+          : "",
+        media_urls: [],
+        media_types: [],
+        is_quote: true,
+        raw: tweet
+      };
+    });
+
+    records.push(...quotedRecords);
+  }
 
   const { error } = await supabase.from(TABLE_NAME).upsert(records, {
     onConflict: "tweet_id"
@@ -68,8 +97,8 @@ export async function syncTweets(
     throw new Error(`Supabase upsert failed: ${error.message}`);
   }
 
-  console.log(`Fetched ${tweets.length} tweets.`);
-  console.log(`Upserted ${records.length} tweets.`);
+  console.log(`Fetched ${tweets.length} own tweets.`);
+  console.log(`Upserted ${records.length} tweets (including quoted).`);
 }
 
 function computeThreadRoots(tweets: Tweet[]) {
